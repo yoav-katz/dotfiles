@@ -1,0 +1,1 @@
+echo 'Y@av2412' | sudo openconnect --protocol=gp 207.232.13.157 -u yoavkatz --servercert pin-sha256:VI3HAo/DjGxu0aCzBRXiJ4ILJBVskvRgm4mnIrP6OPo= --passwd-on-stdin

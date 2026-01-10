@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+# -----------------------------------------------------------
+#                    Generic Helpers
+# -----------------------------------------------------------
+
+menu() {
+  local prompt="${1:-Menu}"
+  local options="${2:-}"
+  local extra_args="${3:-}"
+  local preselect="${4:-}"
+
+  local -a args=()
+
+  # Parse extra args safely
+  if [[ -n "$extra_args" ]]; then
+    # shellcheck disable=SC2206
+    read -r -a args <<<"$extra_args"
+  fi
+
+  walker --dmenu --theme dmenu_250 -p "$prompt…" "${args[@]}" <<<"$options" || true
+}
+
+terminal() { alacritty -e "$@"; }
+
+edit_in_nvim() {
+  local file=$1
+  notify-send "Editing configuration file" "$file"
+  alacritty -e nvim "$file"
+}
+
+edit_then() {
+  local file=$1; shift
+  edit_in_nvim "$file"
+  if [[ $# -gt 0 ]]; then "$@"; fi
+}
+
+selected_or_back() {
+  local sel="$1"
+  if [[ -z "$sel" || "$sel" == "CNCLD" ]]; then
+    show_main_menu
+    return 1
+  fi
+  printf '%s' "$sel"
+}
+
+# -----------------------------------------------------------
+#                     Submenus
+# -----------------------------------------------------------
+
+show_setup_menu() {
+  local -a opts=(
+    "  Audio"
+    "  Wifi"
+    "󰂯  Bluetooth"
+    "󱐋  Power Profile"
+    "󰍹  Monitors"
+  )
+  local sel
+  sel=$(menu "Setup" "$(printf '%s\n' "${opts[@]}")")
+  selected_or_back "$sel" || return
+
+  case "$sel" in
+    *Audio*)      alacritty --class=Wiremix -e wiremix ;;
+    *Wifi*)       rfkill unblock wifi; alacritty --class=Impala -e impala ;;
+    *Bluetooth*)  rfkill unblock bluetooth; blueberry ;;     # runs foreground
+    *Power*)      show_setup_power_menu ;;
+    *)            show_main_menu ;;
+  esac
+}
+
+clean_profile() {
+  case "$1" in
+    power-saver|balanced|performance) printf '%s' "$1" ;;
+    *) printf '' ;;
+  esac
+}
+
+show_setup_power_menu() {
+  local current profile options
+
+  current=$(powerprofilesctl get || true)
+  # Extract profile names
+  options=$(powerprofilesctl list | awk '
+    /^\s*[* ]\s*[a-zA-Z0-9\-]+:$/ {
+      s=$0
+      gsub(/^[*[:space:]]+|:$/,"",s)
+      print s
+    }')
+
+  raw_profile=$(menu "Power Profile" "$options" "" "$current")
+  profile=$(clean_profile "$raw_profile")
+  if [[ -z "$profile" || "$profile" == "CNCLD" ]]; then
+    show_main_menu
+    return
+  fi
+  powerprofilesctl set "$profile"
+}
+
+show_system_menu() {
+  local sel
+  sel=$(menu "System" $'  Lock\n󰤄  Suspend\n  Relaunch\n󰜉  Restart\n󰐥  Shutdown')
+  selected_or_back "$sel" || return
+
+  case "$sel" in
+    *Lock*)       pidof hyprlock >/dev/null || hyprlock & ;;
+    *Suspend*)    systemctl suspend ;;
+    *Relaunch*)   uwsm stop ;;
+    *Restart*)    systemctl reboot ;;
+    *Shutdown*)   systemctl poweroff ;;
+  esac
+}
+
+show_main_menu() {
+  local sel
+  sel=$(menu "Go" $'󰀻  Apps\n  Setup\n  Keybindings\n󰭌  Remove\n  About\n  System')
+  [[ -z "$sel" || "$sel" == "CNCLD" ]] && return
+
+  go_to_menu "$sel"
+}
+
+go_to_menu() {
+  case "${1,,}" in
+    *apps*)        walker -p "Launch…" ;;
+    *keybindings*) menu-keybindings ;;  # assumes you have this defined elsewhere
+    *setup*)       show_setup_menu ;;
+    *power*)       show_setup_power_menu ;;
+    *remove*)      remove-package ;;     # assumes you have this defined
+    *about*)       alacritty -o font.size=9 -e bash -c 'fastfetch; read -n 1 -s' ;;
+    *system*)      show_system_menu ;;
+  esac
+}
+
+# -----------------------------------------------------------
+#                    Entry Point
+# -----------------------------------------------------------
+if [[ $# -gt 0 ]]; then
+  go_to_menu "$*"
+else
+  show_main_menu
+fi
+

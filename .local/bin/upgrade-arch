@@ -1,0 +1,186 @@
+#!/bin/bash
+# A minimal script to upgrade an Arch Linux system.
+
+# --- Configuration ---
+ARCH_UPGRADE="yay -Syu --noconfirm --combinedupgrade"
+NUMNEWS=10
+# --- End Configuration ---
+
+PROG="$(basename "$0")"
+LAST="${XDG_CACHE_HOME:-$HOME/.cache}/$PROG.cache"
+TITLE="Arch software upgrade"
+
+usage() {
+    echo "Usage: $PROG [options]"
+    echo "Options:"
+    echo "  -d   Include development packages in upgrade (passes --devel to yay)"
+    echo "  -n   Skip fetching and checking for latest Arch news"
+    echo "  -a   Automatically proceed even if there is new news"
+    echo "  -h   Show this help message"
+    exit 1
+}
+
+# Default options
+DEVEL=""
+CHECK_NEWS=1
+AUTONEWS=0
+
+# Process command line options
+while getopts "dnah" c; do
+    case $c in
+        d) DEVEL="--devel";;
+        n) CHECK_NEWS=0;;
+        a) AUTONEWS=1;;
+        h) usage;;
+        ?) usage;;
+    esac
+done
+
+shift $((OPTIND - 1))
+
+if [[ $# -ne 0 ]]; then
+    usage
+fi
+
+# Function to trim leading/trailing whitespace
+trim() {
+    local var="$*"
+    var="${var#${var%%[![:space:]]*}}"
+    var="${var%${var##*[![:space:]]}}"
+    printf '%s' "$var"
+}
+
+# Function to ask a yes/no question
+ask() {
+    local prompt default reply
+    prompt="$1"
+    default="$2"
+
+    while true; do
+        if [[ "$default" == "Y" ]]; then
+            read -p "$prompt [Y/n] " reply
+            reply=${reply:-Y}
+        elif [[ "$default" == "N" ]]; then
+            read -p "$prompt [y/N] " reply
+            reply=${reply:-N}
+        else
+            read -p "$prompt [y/n] " reply
+        fi
+
+        case "$reply" in
+            [Yy]*) return 0;;
+            [Nn]*) return 1;;
+        esac
+    done
+}
+
+# --- Main Script ---
+
+# Ensure only one instance of the script is running
+exec 200>"/tmp/$PROG.lock"
+if ! flock -n 200; then
+    echo "ERROR: $PROG is already running!"
+    exit 1
+fi
+
+# Setup temporary files and cleanup trap
+trap 'rm -f "$tmp1" "$tmp2" "$tmp3" "/tmp/$PROG.lock"' EXIT
+tmp1=$(mktemp)
+tmp2=$(mktemp)
+tmp3=$(mktemp)
+
+# Check if yay is installed
+HELPER=$(echo "$ARCH_UPGRADE" | awk '{print $1}')
+if ! type -p "$HELPER" >/dev/null; then
+    echo "ERROR: AUR helper \"$HELPER\" is not installed."
+    exit 1
+fi
+
+echo "Updating mirrorlist..."
+if ! sudo reflector \
+  --country Israel \
+  --country Worldwide \
+  --age 12 \
+  --protocol https \
+  --sort rate \
+  --save /etc/pacman.d/mirrorlist; then
+    echo "ERROR: reflector failed to update mirrorlist."
+    exit 1
+fi
+
+echo "##### $TITLE starting #####"
+
+# Grab latest news and report any new news items
+if [[ $CHECK_NEWS -eq 1 ]]; then
+    for prog in curl unidecode xmlstarlet recode; do
+        if ! type -p "$prog" >/dev/null; then
+            echo "ERROR: Please install the '$prog' utility."
+            exit 1
+        fi
+    done
+    echo
+    echo "Fetching latest Arch news ..."
+    
+    # Get news from appropriate feed ..
+    res=1
+	NEWSSITE="https://archlinux.org/news/"
+    NEWSFEED="https://archlinux.org/feeds/news/"
+    if curl --silent "$NEWSFEED" -o "$tmp1"; then
+        unidecode "$tmp1" > "$tmp3"
+        xmlstarlet sel -t -m //item -v pubDate -o "|" -v title -n "$tmp3" | recode html > "$tmp2"
+        res=$?
+    fi
+
+    if [[ $res -ne 0 ]]; then
+        if ! ask "News fetch failed. Continue?" N; then
+            exit 0
+        fi
+        rm -f "$tmp2"
+    fi
+
+    if [[ -s $tmp2 ]]; then
+        head -n "$NUMNEWS" "$tmp2" | while IFS="|" read -r d t;
+ do
+            dt=$(date -d"$d" "+%Y-%m-%d")
+            echo "$dt: $(trim "$t")"
+        done >"$tmp1"
+
+        if [[ -f $LAST ]]; then
+            diffs=$(comm -23 <(sort "$tmp1") <(sort "$LAST") | sort -rn)
+        else
+            diffs=$(cat "$tmp1")
+        fi
+
+        if [[ -n $diffs ]]; then
+            echo
+            echo "*** WARNING - ARCH NEWS UPDATE ***:"
+            echo "$diffs"
+            echo
+            echo "Read details at $NEWSSITE"
+            if [[ $AUTONEWS -eq 0 ]]; then
+                if ! ask "Continue $TITLE?" N; then
+                    exit 0
+                fi
+            fi
+            mkdir -p "$(dirname "$LAST")"
+            mv "$tmp1" "$LAST"
+        else
+            echo
+            echo "No new Arch news."
+        fi
+    fi
+fi
+
+echo
+echo "Performing $TITLE..."
+echo "Command: $ARCH_UPGRADE $DEVEL"
+echo
+
+if ! bash -c "$ARCH_UPGRADE $DEVEL"; then
+    echo "ERROR: $TITLE finished with errors."
+    exit 1
+fi
+
+echo
+echo "INFO: $TITLE completed successfully."
+exit 0
