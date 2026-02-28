@@ -12,10 +12,12 @@ btop
 chromium
 cockpit
 cockpit-files
+code
 discord
 dkms
 dmidecode
 docker
+docker-buildx
 docker-compose
 efibootmgr
 elephant
@@ -28,6 +30,7 @@ fprintd
 fzf
 gemini-cli
 git
+git-lfs
 gst-plugin-pipewire
 helm
 htop
