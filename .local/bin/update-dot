@@ -1,0 +1,22 @@
+#!/bin/bash
+
+set -e
+
+# Extract common packages
+pacman -Qqe > packages-common.txt
+sed -i '/^linux/d;/^linux-firmware/d;/^intel/d;/^amd/d;/^nvidia/d;/^mesa-vulkan/d' packages-common.txt
+
+# Intel packages
+pacman -Qqe | grep -E 'intel|i915|xf86-video-intel' > packages-intel.txt
+
+# AMD packages
+pacman -Qqe | grep -E 'amd|amdgpu|xf86-video-amdgpu|vulkan-radeon' > packages-amd.txt
+
+# Dotfiles repo command
+DOT="git --git-dir=$HOME/.dotfiles --work-tree=$HOME"
+
+# Add configs
+$DOT add ~/.config/
+$DOT add ~/.local/bin/
+
+echo "Dotfiles updated successfully."
