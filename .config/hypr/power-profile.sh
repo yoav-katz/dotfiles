@@ -1,13 +1,20 @@
 #!/bin/bash
 
-AC_ON=$(upower -i $(upower -e | grep AC) | grep "online" | awk '{print $2}')
+AC_STATE=0
 
-if [ "$AC_ON" = "yes" ]; then
-    LOCK=900      # 15 minutes
-    DPMS=1200     # 20 minutes
+for f in /sys/class/power_supply/AC*/online; do
+    if [ -f "$f" ]; then
+        AC_STATE=$(cat "$f")
+        break
+    fi
+done
+
+if [ "$AC_STATE" = "1" ]; then
+    LOCK=900
+    DPMS=1200
 else
-    LOCK=300      # 5 minutes
-    DPMS=330      # ~5.5 minutes
+    LOCK=300
+    DPMS=330
 fi
 
 cat > ~/.config/hypr/idle.conf <<EOF
