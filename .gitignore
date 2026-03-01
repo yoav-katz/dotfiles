@@ -12,6 +12,9 @@
 .bash_history
 .dotfiles
 .gitconfig
+.ftb
+.node_repl_history
+.vim
 
 Desktop
 Downloads
@@ -24,8 +27,12 @@ go
 .pulse-cookie
 .pki
 .npm
-
+.mongodb
 .vagrant.d
+.kube
+.jdks
+.java
+.docker
 
 
 .steampid
