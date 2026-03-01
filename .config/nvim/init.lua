@@ -11,6 +11,8 @@ Plug('nvim-treesitter/nvim-treesitter', {['do'] = ':TSUpdate'})
 
 vim.call('plug#end')
 
+vim.opt.clipboard = "unnamedplus"
+
 home=os.getenv("HOME")
 package.path = home .. "/.config/nvim/?.lua;" .. package.path
 
